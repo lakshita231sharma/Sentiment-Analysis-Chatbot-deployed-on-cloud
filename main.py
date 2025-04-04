@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from textblob import TextBlob
+import os
+import uvicorn
 
 app = FastAPI()
 
@@ -42,3 +44,8 @@ async def chat(request: Request):
         response = f"I remember you said: {', '.join(user_context[user_id])}. You seem {mood}."
 
     return {"response": response}
+
+# Run the app (Make it compatible with cloud deployments)
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 10000))  # Get port from environment or use default
+    uvicorn.run(app, host="0.0.0.0", port=port)
