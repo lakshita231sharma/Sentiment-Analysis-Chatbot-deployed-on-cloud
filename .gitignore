@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+venvpip/
+credentials/gcp_key.json
