@@ -3,6 +3,7 @@ import uuid
 
 class ChatbotUser(HttpUser):
     wait_time = between(1, 2)
+    host = "https://sentiment-analysis-chatbot-k5q8.onrender.com"  # 👈 Use your cloud URL
 
     @task
     def send_message(self):
