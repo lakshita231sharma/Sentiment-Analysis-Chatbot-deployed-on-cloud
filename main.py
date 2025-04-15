@@ -1,24 +1,35 @@
 import time
 import uuid
 import psutil
-from fastapi import FastAPI, Depends, BackgroundTasks
+import traceback
+from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from textblob import TextBlob
-from datetime import datetime
 from models import Chat
 from database import get_db
 from services.autoscaler import create_vm
+from fastapi.middleware.cors import CORSMiddleware
 
+# Initialize FastAPI app
 app = FastAPI()
+
+# ----- Enable CORS ----- 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (adjust for production)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ----- Request Model -----
 class ChatRequest(BaseModel):
     user_id: str
     message: str
 
-# ----- Root -----
+# ----- Root Endpoint -----
 @app.get("/")
 async def root():
     return {"message": "Hello! Chatbot is running 🚀"}
@@ -30,7 +41,7 @@ async def chat(
     db: AsyncSession = Depends(get_db),
     background_tasks: BackgroundTasks = None
 ):
-    # Sentiment analysis
+    # Perform sentiment analysis
     analysis = TextBlob(request.message)
     polarity = analysis.sentiment.polarity
     sentiment_label = (
@@ -39,15 +50,22 @@ async def chat(
         else "Neutral 😐"
     )
 
-    # Autoscaling if CPU usage > 75%
+    # Monitor CPU usage
     cpu_percent = psutil.cpu_percent(interval=1)
-    if cpu_percent > 75:
-        print(f"🚨 High CPU usage detected: {cpu_percent}% — Creating new VM!")
-    timestamp = int(time.time())
-    vm_name = f"chatbot-vm-{timestamp}"
-    create_vm(vm_name)
+    print(f"[DEBUG] CPU usage: {cpu_percent}%")
 
-    # Save to DB
+    # Trigger autoscaling if CPU usage is high
+    if cpu_percent > 10:
+        timestamp = int(time.time())
+        vm_name = f"chatbot-vm-{timestamp}"
+        print(f"🚨 High CPU: {cpu_percent}% — Creating VM: {vm_name}")
+        try:
+            result = create_vm(vm_name)
+            print(f"[✅] VM creation requested: {vm_name}")
+        except Exception as e:
+            print("❌ Error creating VM:", str(e))
+
+    # Save chat to database
     try:
         new_chat = Chat(
             user_id=request.user_id,
@@ -59,15 +77,15 @@ async def chat(
         await db.refresh(new_chat)
     except Exception as e:
         await db.rollback()
-        return {"error": "Database error", "details": str(e)}
+        print("❌ ERROR in /chat route:", str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
 
     return {
-        "user_id": request.user_id,
-        "message": request.message,
-        "sentiment": sentiment_label
+        "response": sentiment_label
     }
 
-# ----- Chat History -----
+# ----- Chat History Endpoint -----
 @app.get("/history/{user_id}")
 async def get_history(user_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Chat).where(Chat.user_id == user_id))
@@ -86,7 +104,9 @@ async def get_history(user_id: str, db: AsyncSession = Depends(get_db)):
 async def test_autoscale():
     try:
         instance_name = f"chatbot-instance-{uuid.uuid4().hex[:6]}"
+        print(f"[TEST] Manually triggering VM creation: {instance_name}")
         result = create_vm(instance_name)
-        return {"status": "success", "operation": result}
+        return {"status": "success", "vm_name": instance_name, "operation": str(result)}
     except Exception as e:
+        print("❌ Error in test-autoscale:", str(e))
         return {"status": "error", "details": str(e)}
