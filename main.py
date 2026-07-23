@@ -55,7 +55,7 @@ async def chat(
     print(f"[DEBUG] CPU usage: {cpu_percent}%")
 
     # Trigger autoscaling if CPU usage is high
-    if cpu_percent > 10:
+    if cpu_percent > 80:
         timestamp = int(time.time())
         vm_name = f"chatbot-vm-{timestamp}"
         print(f"🚨 High CPU: {cpu_percent}% — Creating VM: {vm_name}")
